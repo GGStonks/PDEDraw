@@ -10,9 +10,9 @@ struct MainView: View {
         GeometryReader { geo in
             ZStack {
                 LinearGradient(
-                    colors: [Color(red: 0.92, green: 0.95, blue: 1.0), Color(red: 0.86, green: 0.91, blue: 0.98), Color(red: 0.95, green: 0.93, blue: 1.0)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
+                    colors: [Color.black, Color(red: 0.06, green: 0.07, blue: 0.11)],
+                    startPoint: .top,
+                    endPoint: .bottom
                 )
                 .ignoresSafeArea()
                 
@@ -63,10 +63,25 @@ struct MainView: View {
                         Button(action: { viewModel.clear() }) {
                             Image(systemName: "trash")
                                 .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(.red.opacity(0.8))
+                                .foregroundColor(.red.opacity(0.95))
                                 .frame(width: 44, height: 44)
-                                .liquidGlass(cornerRadius: 22)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Circle())
+                                .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
+                                .shadow(color: .black.opacity(0.4), radius: 10, y: 6)
                         }
+                        
+                        Button(action: { viewModel.undo() }) {
+                            Image(systemName: "arrow.uturn.backward")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(viewModel.canUndo ? .white : .white.opacity(0.35))
+                                .frame(width: 44, height: 44)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Circle())
+                                .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
+                                .shadow(color: .black.opacity(0.4), radius: 10, y: 6)
+                        }
+                        .disabled(!viewModel.canUndo)
                         
                         Spacer()
                         
@@ -76,7 +91,10 @@ struct MainView: View {
                                 .font(.system(size: 16, weight: .semibold))
                                 .foregroundColor(.primary)
                                 .frame(width: 44, height: 44)
-                                .liquidGlass(cornerRadius: 22)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Circle())
+                                .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
+                                .shadow(color: .black.opacity(0.4), radius: 10, y: 6)
                         }
                         
                         // Copy TikZ Button (Premium Pill)
@@ -96,12 +114,12 @@ struct MainView: View {
                             .padding(.horizontal, 16)
                             .frame(height: 44)
                             .background(
-                                LinearGradient(colors: [Color.blue.opacity(0.9), Color.indigo.opacity(0.9)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                LinearGradient(colors: [Color(red: 0.18, green: 0.39, blue: 0.94), Color(red: 0.35, green: 0.25, blue: 0.96)], startPoint: .topLeading, endPoint: .bottomTrailing)
                             )
                             .foregroundColor(.white)
                             .clipShape(Capsule())
-                            .overlay(Capsule().stroke(Color.white.opacity(0.4), lineWidth: 0.5))
-                            .shadow(color: .blue.opacity(0.3), radius: 10, y: 5)
+                            .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
+                            .shadow(color: Color(red: 0.18, green: 0.39, blue: 0.94).opacity(0.35), radius: 14, y: 8)
                         }
                     }.padding(.horizontal, 20).padding(.top, 10)
                     
@@ -143,7 +161,10 @@ struct MainView: View {
                         }
                     }
                     .padding(8)
-                    .liquidGlass(cornerRadius: 28)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.5)) // Glass specular highlight
+                    .shadow(color: .black.opacity(0.35), radius: 28, y: 15)
                     .padding(.bottom, geo.safeAreaInsets.bottom + 16)
                 }
                 
@@ -160,6 +181,7 @@ struct MainView: View {
                 }
             }
             .sheet(isPresented: $showPreview) { TikZPreviewView(tikzCode: TikZExporter.generateCode(from: viewModel.shapes, canvasSize: geo.size)) }
+            .preferredColorScheme(.dark)
         }
     }
     

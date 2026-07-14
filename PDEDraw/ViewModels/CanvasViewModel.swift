@@ -6,6 +6,7 @@ class CanvasViewModel: ObservableObject {
     private let edgeSnapThreshold: CGFloat = 8.0
     
     @Published var shapes: [DrawnShape] = []
+    @Published private(set) var canUndo: Bool = false
     @Published var currentTool: DrawingTool = .curve
     @Published var currentStyle: ShapeStyle = ShapeStyle()
     
@@ -24,6 +25,8 @@ class CanvasViewModel: ObservableObject {
     private var cachedSnapPoints: [CGPoint] = []
     private var cachedIntersections: [CGPoint] = []
     private var isDragging: Bool = false
+    private var undoStack: [[DrawnShape]] = []
+    private var hasCapturedMoveSnapshot: Bool = false
 
     private func ensureCachePrepared() {
         if !isDragging {
@@ -46,6 +49,10 @@ class CanvasViewModel: ObservableObject {
             if grabbedShapeID == nil {
                 if let hitIndex = shapes.lastIndex(where: { $0.hitTest(value.startLocation) }) {
                     grabbedShapeID = shapes[hitIndex].id
+                    if !hasCapturedMoveSnapshot {
+                        pushUndoSnapshot()
+                        hasCapturedMoveSnapshot = true
+                    }
                     lastMoveLocation = value.startLocation
                     Haptic.shared.light()
                 }
@@ -116,6 +123,7 @@ class CanvasViewModel: ObservableObject {
             
         case .eraser:
             if let hitIndex = shapes.lastIndex(where: { $0.hitTest(rawLoc) }) {
+                pushUndoSnapshot()
                 shapes.remove(at: hitIndex)
                 Haptic.shared.light()
                 isDragging = false
@@ -140,6 +148,7 @@ class CanvasViewModel: ObservableObject {
         if currentTool == .curve && currentPoints.count > 2 {
             let first = currentPoints.first!, last = currentPoints.last!
             let closed = (snapDotLocation == first) || (first.distance(to: last) < 18.0)
+            pushUndoSnapshot()
             shapes.append(DrawnShape(type: .smoothCurve(points: currentPoints, isClosed: closed), style: currentStyle))
         } else if let s = currentDragStart, let e = currentDragEnd {
             let type: ShapeType
@@ -150,6 +159,7 @@ class CanvasViewModel: ObservableObject {
             case .point: type = .point(position: e)
             default: resetState(); return
             }
+            pushUndoSnapshot()
             shapes.append(DrawnShape(type: type, style: currentStyle))
         }
         resetState()
@@ -163,6 +173,7 @@ class CanvasViewModel: ObservableObject {
         snapDotLocation = nil
         isCurrentlySnapping = false
         lastMoveLocation = nil
+        hasCapturedMoveSnapshot = false
         
         isDragging = false
         cachedSnapPoints.removeAll(keepingCapacity: true)
@@ -244,7 +255,10 @@ class CanvasViewModel: ObservableObject {
     }
     
     func addLabel(text: String, position: CGPoint) {
-        if !text.isEmpty { shapes.append(DrawnShape(type: .label(text: text, position: position, scale: 1.0), style: currentStyle)) }
+        if !text.isEmpty {
+            pushUndoSnapshot()
+            shapes.append(DrawnShape(type: .label(text: text, position: position, scale: 1.0), style: currentStyle))
+        }
     }
     
     func updateLabelScale(id: UUID, scale: CGFloat) {
@@ -254,7 +268,24 @@ class CanvasViewModel: ObservableObject {
     }
     
     func clear() {
+        guard !shapes.isEmpty else { return }
+        pushUndoSnapshot()
         withAnimation { shapes.removeAll() }
         Haptic.shared.success()
+    }
+    
+    func undo() {
+        guard let previous = undoStack.popLast() else { return }
+        withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+            shapes = previous
+        }
+        canUndo = !undoStack.isEmpty
+        resetState()
+        Haptic.shared.light()
+    }
+    
+    private func pushUndoSnapshot() {
+        undoStack.append(shapes)
+        canUndo = true
     }
 }

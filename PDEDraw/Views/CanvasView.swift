@@ -6,7 +6,7 @@ struct CanvasView: View {
 
     var body: some View {
         ZStack {
-            Color.clear.ignoresSafeArea()
+            Color.black.ignoresSafeArea()
                 .onTapGesture { loc in
                     if viewModel.currentTool == .label {
                         viewModel.typingPos = loc
@@ -41,13 +41,13 @@ struct CanvasView: View {
                 })
                 .frame(width: 180.0, height: 44.0)
                 .padding(12)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(.ultraThinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(LinearGradient(colors: [Color.white.opacity(0.65), Color.white.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.0)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
                 )
-                .shadow(color: .white.opacity(0.18), radius: 2.0, y: -1.0)
-                .shadow(color: .black.opacity(0.2), radius: 18.0, y: 12.0)
+                .shadow(color: .black.opacity(0.35), radius: 18, y: 8)
                 .position(tp)
             }
         }
@@ -286,7 +286,7 @@ struct DotGrid: View {
         Canvas { context, size in
             for x in stride(from: 0.0, to: size.width, by: 30.0) {
                 for y in stride(from: 0.0, to: size.height, by: 30.0) {
-                    context.fill(Path(ellipseIn: CGRect(x: x - 0.75, y: y - 0.75, width: 1.5, height: 1.5)), with: .color(.secondary.opacity(0.1)))
+                    context.fill(Path(ellipseIn: CGRect(x: x - 0.75, y: y - 0.75, width: 1.5, height: 1.5)), with: .color(.white.opacity(0.12)))
                 }
             }
         }.ignoresSafeArea()
