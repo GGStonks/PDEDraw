@@ -2,6 +2,9 @@ import SwiftUI
 import Combine
 
 class CanvasViewModel: ObservableObject {
+    private let pointSnapThreshold: CGFloat = 14.0
+    private let edgeSnapThreshold: CGFloat = 8.0
+    
     @Published var shapes: [DrawnShape] = []
     @Published var currentTool: DrawingTool = .curve
     @Published var currentStyle: ShapeStyle = ShapeStyle()
@@ -167,30 +170,35 @@ class CanvasViewModel: ObservableObject {
     }
 
     private func findSnapPoint(near point: CGPoint) -> CGPoint {
-        for intersect in cachedIntersections {
-            if point.distance(to: intersect) < 14.0 {
-                if !isCurrentlySnapping { Haptic.shared.snap(); isCurrentlySnapping = true }
-                snapDotLocation = intersect
-                return intersect
+        var nearestPointSnap: (point: CGPoint, distance: CGFloat)? = nil
+        for candidate in cachedIntersections + cachedSnapPoints {
+            let distance = point.distance(to: candidate)
+            if distance <= pointSnapThreshold && (nearestPointSnap == nil || distance < nearestPointSnap!.distance) {
+                nearestPointSnap = (candidate, distance)
             }
         }
         
-        for sp in cachedSnapPoints {
-            if point.distance(to: sp) < 14.0 {
-                if !isCurrentlySnapping { Haptic.shared.snap(); isCurrentlySnapping = true }
-                snapDotLocation = sp
-                return sp
-            }
+        if let nearest = nearestPointSnap {
+            if !isCurrentlySnapping { Haptic.shared.snap() }
+            isCurrentlySnapping = true
+            snapDotLocation = nearest.point
+            return nearest.point
         }
         
+        var nearestEdgeSnap: (point: CGPoint, distance: CGFloat)? = nil
         for shape in shapes {
             if let edgeSnap = shape.closestPointOnEdge(to: point) {
-                if point.distance(to: edgeSnap) < 4.0 {
-                    isCurrentlySnapping = false
-                    snapDotLocation = edgeSnap
-                    return edgeSnap
+                let distance = point.distance(to: edgeSnap)
+                if distance <= edgeSnapThreshold && (nearestEdgeSnap == nil || distance < nearestEdgeSnap!.distance) {
+                    nearestEdgeSnap = (edgeSnap, distance)
                 }
             }
+        }
+        
+        if let nearest = nearestEdgeSnap {
+            isCurrentlySnapping = false
+            snapDotLocation = nearest.point
+            return nearest.point
         }
         
         isCurrentlySnapping = false

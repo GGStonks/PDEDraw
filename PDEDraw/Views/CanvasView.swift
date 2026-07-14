@@ -6,7 +6,7 @@ struct CanvasView: View {
 
     var body: some View {
         ZStack {
-            Color(UIColor.systemBackground).ignoresSafeArea()
+            Color.clear.ignoresSafeArea()
                 .onTapGesture { loc in
                     if viewModel.currentTool == .label {
                         viewModel.typingPos = loc
@@ -41,9 +41,13 @@ struct CanvasView: View {
                 })
                 .frame(width: 180.0, height: 44.0)
                 .padding(12)
-                .background(.ultraThinMaterial)
-                .cornerRadius(12)
-                .shadow(color: .black.opacity(0.15), radius: 15)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(LinearGradient(colors: [Color.white.opacity(0.65), Color.white.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.0)
+                )
+                .shadow(color: .white.opacity(0.18), radius: 2.0, y: -1.0)
+                .shadow(color: .black.opacity(0.2), radius: 18.0, y: 12.0)
                 .position(tp)
             }
         }

@@ -9,6 +9,27 @@ struct MainView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
+                LinearGradient(
+                    colors: [Color(red: 0.92, green: 0.95, blue: 1.0), Color(red: 0.86, green: 0.91, blue: 0.98), Color(red: 0.95, green: 0.93, blue: 1.0)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+                
+                Circle()
+                    .fill(LinearGradient(colors: [Color.blue.opacity(0.28), Color.clear], startPoint: .top, endPoint: .bottom))
+                    .frame(width: 360, height: 360)
+                    .blur(radius: 24)
+                    .offset(x: -120, y: -260)
+                    .allowsHitTesting(false)
+                
+                Circle()
+                    .fill(LinearGradient(colors: [Color.purple.opacity(0.24), Color.clear], startPoint: .top, endPoint: .bottom))
+                    .frame(width: 320, height: 320)
+                    .blur(radius: 26)
+                    .offset(x: 160, y: 320)
+                    .allowsHitTesting(false)
+                
                 // 1. The Canvas
                 CanvasView(viewModel: viewModel)
                 
@@ -26,10 +47,7 @@ struct MainView: View {
                         }
                         .padding(.horizontal, 20)
                         .padding(.vertical, 12)
-                        .background(.regularMaterial)
-                        .clipShape(Capsule())
-                        .overlay(Capsule().stroke(Color.white.opacity(0.4), lineWidth: 0.5)) // Glass edge
-                        .shadow(color: .black.opacity(0.12), radius: 15, y: 8)
+                        .liquidGlass(cornerRadius: 24)
                         .transition(.move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.9)))
                         
                         Spacer()
@@ -47,10 +65,7 @@ struct MainView: View {
                                 .font(.system(size: 16, weight: .semibold))
                                 .foregroundColor(.red.opacity(0.8))
                                 .frame(width: 44, height: 44)
-                                .background(.ultraThinMaterial)
-                                .clipShape(Circle())
-                                .overlay(Circle().stroke(Color.white.opacity(0.3), lineWidth: 0.5))
-                                .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
+                                .liquidGlass(cornerRadius: 22)
                         }
                         
                         Spacer()
@@ -61,10 +76,7 @@ struct MainView: View {
                                 .font(.system(size: 16, weight: .semibold))
                                 .foregroundColor(.primary)
                                 .frame(width: 44, height: 44)
-                                .background(.ultraThinMaterial)
-                                .clipShape(Circle())
-                                .overlay(Circle().stroke(Color.white.opacity(0.3), lineWidth: 0.5))
-                                .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
+                                .liquidGlass(cornerRadius: 22)
                         }
                         
                         // Copy TikZ Button (Premium Pill)
@@ -131,10 +143,7 @@ struct MainView: View {
                         }
                     }
                     .padding(8)
-                    .background(.ultraThinMaterial)
-                    .clipShape(Capsule())
-                    .overlay(Capsule().stroke(Color.white.opacity(0.5), lineWidth: 0.5)) // Glass specular highlight
-                    .shadow(color: .black.opacity(0.12), radius: 25, y: 12)
+                    .liquidGlass(cornerRadius: 28)
                     .padding(.bottom, geo.safeAreaInsets.bottom + 16)
                 }
                 
@@ -257,14 +266,24 @@ struct InspectorView: View {
         }
         .padding(20)
         .frame(width: 290)
-        .background(
-            RoundedRectangle(cornerRadius: 24)
-                .fill(.thickMaterial)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 24)
-                .stroke(Color.white.opacity(0.4), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.15), radius: 30, y: 15)
+        .liquidGlass(cornerRadius: 24)
+    }
+}
+
+extension View {
+    func liquidGlass(cornerRadius: CGFloat) -> some View {
+        self
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(0.72), Color.white.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.0)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(Color.white.opacity(0.22), lineWidth: 0.35)
+                    .blur(radius: 1.0)
+            )
+            .shadow(color: .white.opacity(0.24), radius: 3.0, y: -1.0)
+            .shadow(color: .black.opacity(0.18), radius: 18.0, y: 10.0)
     }
 }

@@ -79,9 +79,36 @@ struct DrawnShape: Identifiable {
     
     var snapPoints: [CGPoint] {
         switch type {
-        case .rectangle(let s, let e), .ellipse(let s, let e):
-            let c = CGPoint(x: (s.x + e.x) / 2.0, y: (s.y + e.y) / 2.0)
-            return [s, e, c, CGPoint(x: s.x, y: e.y), CGPoint(x: e.x, y: s.y)]
+        case .rectangle(let s, let e):
+            let minX = min(s.x, e.x), maxX = max(s.x, e.x)
+            let minY = min(s.y, e.y), maxY = max(s.y, e.y)
+            let center = CGPoint(x: (minX + maxX) / 2.0, y: (minY + maxY) / 2.0)
+            return [
+                CGPoint(x: minX, y: minY),
+                CGPoint(x: maxX, y: maxY),
+                CGPoint(x: minX, y: maxY),
+                CGPoint(x: maxX, y: minY),
+                center,
+                CGPoint(x: center.x, y: minY),
+                CGPoint(x: center.x, y: maxY),
+                CGPoint(x: minX, y: center.y),
+                CGPoint(x: maxX, y: center.y)
+            ]
+        case .ellipse(let s, let e):
+            let minX = min(s.x, e.x), maxX = max(s.x, e.x)
+            let minY = min(s.y, e.y), maxY = max(s.y, e.y)
+            let center = CGPoint(x: (minX + maxX) / 2.0, y: (minY + maxY) / 2.0)
+            return [
+                CGPoint(x: minX, y: minY),
+                CGPoint(x: maxX, y: maxY),
+                CGPoint(x: minX, y: maxY),
+                CGPoint(x: maxX, y: minY),
+                center,
+                CGPoint(x: center.x, y: minY),
+                CGPoint(x: center.x, y: maxY),
+                CGPoint(x: minX, y: center.y),
+                CGPoint(x: maxX, y: center.y)
+            ]
         case .line(let s, let e): return [s, e, CGPoint(x: (s.x + e.x) / 2.0, y: (s.y + e.y) / 2.0)]
         case .smoothCurve(let p, _): return [p.first, p.last].compactMap { $0 }
         case .point(let p): return [p]
