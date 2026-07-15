@@ -2,7 +2,7 @@ import SwiftUI
 
 struct MainView: View {
     @StateObject var viewModel = CanvasViewModel()
-    private let toolbarTools: [DrawingTool] = [.move, .curve, .scribble, .triangle, .rectangle, .ellipse, .line, .point, .label, .eraser]
+    private let toolbarTools: [DrawingTool] = [.move, .curve, .scribble, .rectangle, .ellipse, .line, .point, .label, .eraser]
     @State private var showInspector = false
     @State private var showPreview = false
     @State private var showToast = false
@@ -154,10 +154,6 @@ struct MainView: View {
                         }
                     }
                     .padding(8)
-                    .background(.ultraThinMaterial)
-                    .clipShape(Capsule())
-                    .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.5)) // Glass specular highlight
-                    .shadow(color: .black.opacity(0.35), radius: 28, y: 15)
                     .scaleEffect(isDraggingDock ? 1.03 : 1.0)
                     .offset(dockOffset)
                     .padding(.bottom, geo.safeAreaInsets.bottom + 16)
@@ -226,7 +222,6 @@ struct MainView: View {
         case .move: return isActive ? "hand.point.up.left.fill" : "hand.point.up.left"
         case .curve: return "scribble.variable"
         case .scribble: return isActive ? "signature" : "signature"
-        case .triangle: return isActive ? "triangle.fill" : "triangle"
         case .rectangle: return isActive ? "rectangle.fill" : "rectangle"
         case .ellipse: return isActive ? "circle.fill" : "circle"
         case .line: return "line.diagonal"
