@@ -326,16 +326,6 @@ struct LivePreviewRenderer: View {
                         if viewModel.currentTool == .rectangle {
                             p.addRect(CGRect(x: min(s.x, e.x), y: min(s.y, e.y), width: w, height: h))
                         }
-                        if viewModel.currentTool == .triangle {
-                            let minX = min(s.x, e.x)
-                            let maxX = max(s.x, e.x)
-                            let minY = min(s.y, e.y)
-                            let maxY = max(s.y, e.y)
-                            p.move(to: CGPoint(x: (minX + maxX) / 2.0, y: minY))
-                            p.addLine(to: CGPoint(x: maxX, y: maxY))
-                            p.addLine(to: CGPoint(x: minX, y: maxY))
-                            p.closeSubpath()
-                        }
                         if viewModel.currentTool == .ellipse {
                             p.addEllipse(in: CGRect(x: min(s.x, e.x), y: min(s.y, e.y), width: w, height: h))
                         }

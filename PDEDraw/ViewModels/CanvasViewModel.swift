@@ -107,7 +107,7 @@ class CanvasViewModel: ObservableObject {
                 }
             }
             
-        case .triangle, .rectangle, .point:
+        case .rectangle, .point:
             if currentDragStart == nil { currentDragStart = findSnapPoint(near: value.startLocation) }
             currentDragEnd = snappedLoc
             
@@ -172,7 +172,6 @@ class CanvasViewModel: ObservableObject {
         } else if let s = currentDragStart, let e = currentDragEnd {
             let type: ShapeType
             switch currentTool {
-            case .triangle: type = .triangle(start: s, end: e)
             case .rectangle: type = .rectangle(start: s, end: e)
             case .ellipse: type = .ellipse(start: s, end: e)
             case .line: type = .line(start: s, end: e)
