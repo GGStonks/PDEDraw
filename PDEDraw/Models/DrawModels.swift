@@ -8,7 +8,7 @@ class Haptic {
 }
 
 enum DrawingTool: String, CaseIterable {
-    case move, curve, rectangle, ellipse, line, point, label, eraser
+    case move, curve, scribble, triangle, rectangle, ellipse, line, point, label, eraser
 }
 
 enum LineStyle: String, CaseIterable {
@@ -49,6 +49,8 @@ struct ShapeStyle {
 
 enum ShapeType {
     case smoothCurve(points: [CGPoint], isClosed: Bool)
+    case scribble(points: [CGPoint])
+    case triangle(start: CGPoint, end: CGPoint)
     case rectangle(start: CGPoint, end: CGPoint)
     case ellipse(start: CGPoint, end: CGPoint)
     case line(start: CGPoint, end: CGPoint)
@@ -63,12 +65,16 @@ struct DrawnShape: Identifiable {
     
     var boundingBox: CGRect {
         switch type {
-        case .rectangle(let s, let e), .ellipse(let s, let e), .line(let s, let e):
+        case .triangle(let s, let e), .rectangle(let s, let e), .ellipse(let s, let e), .line(let s, let e):
             return CGRect(x: min(s.x, e.x), y: min(s.y, e.y), width: max(30.0, abs(e.x - s.x)), height: max(30.0, abs(e.y - s.y))).insetBy(dx: -20.0, dy: -20.0)
         case .smoothCurve(let pts, _):
             let xs = pts.map { $0.x }; let ys = pts.map { $0.y }
             let minX = (xs.min() ?? 0.0), minY = (ys.min() ?? 0.0)
             return CGRect(x: minX, y: minY, width: (xs.max() ?? 0.0) - minX, height: (ys.max() ?? 0.0) - minY).insetBy(dx: -20.0, dy: -20.0)
+        case .scribble(let pts):
+            let xs = pts.map { $0.x }; let ys = pts.map { $0.y }
+            let minX = (xs.min() ?? 0.0), minY = (ys.min() ?? 0.0)
+            return CGRect(x: minX, y: minY, width: (xs.max() ?? 0.0) - minX, height: (ys.max() ?? 0.0) - minY).insetBy(dx: -14.0, dy: -14.0)
         case .point(let p):
             return CGRect(x: p.x - 15.0, y: p.y - 15.0, width: 30.0, height: 30.0)
         case .label(_, let p, let sc):
@@ -79,6 +85,10 @@ struct DrawnShape: Identifiable {
     
     var snapPoints: [CGPoint] {
         switch type {
+        case .triangle(let s, let e):
+            let p = trianglePoints(start: s, end: e)
+            let center = CGPoint(x: (p[0].x + p[1].x + p[2].x) / 3.0, y: (p[0].y + p[1].y + p[2].y) / 3.0)
+            return [p[0], p[1], p[2], center]
         case .rectangle(let s, let e):
             let c = CGPoint(x: (s.x + e.x) / 2.0, y: (s.y + e.y) / 2.0)
             let p1 = CGPoint(x: min(s.x, e.x), y: min(s.y, e.y))
@@ -125,6 +135,14 @@ struct DrawnShape: Identifiable {
                 sampled.append(p[index])
             }
             return sampled
+        case .scribble(let p):
+            guard p.count > 2 else { return [p.first, p.last].compactMap { $0 } }
+            let strideCount = max(1, p.count / 12)
+            var sampled = [p.first, p.last].compactMap { $0 }
+            for index in stride(from: strideCount, to: p.count - 1, by: strideCount) {
+                sampled.append(p[index])
+            }
+            return sampled
         case .point(let p): return [p]
         case .label(_, let p, _): return [p]
         }
@@ -132,6 +150,10 @@ struct DrawnShape: Identifiable {
     
     func closestPointOnEdge(to point: CGPoint) -> CGPoint? {
         switch type {
+        case .triangle(let s, let e):
+            let p = trianglePoints(start: s, end: e)
+            let edges = [point.project(start: p[0], end: p[1]), point.project(start: p[1], end: p[2]), point.project(start: p[2], end: p[0])]
+            return edges.min(by: { point.distance(to: $0) < point.distance(to: $1) })
         case .ellipse(let s, let e):
             let cx = (s.x + e.x) / 2.0, cy = (s.y + e.y) / 2.0
             let rx = abs(e.x - s.x) / 2.0, ry = abs(e.y - s.y) / 2.0
@@ -161,37 +183,99 @@ struct DrawnShape: Identifiable {
                 if d < minDist { minDist = d; closest = proj }
             }
             return closest
+        case .scribble(let pts):
+            guard pts.count > 1 else { return pts.first }
+            var closest: CGPoint? = nil
+            var minDist: CGFloat = .infinity
+            for i in 0 ..< pts.count - 1 {
+                let proj = point.project(start: pts[i], end: pts[i + 1])
+                let d = point.distance(to: proj)
+                if d < minDist { minDist = d; closest = proj }
+            }
+            return closest
             
         default: return nil
         }
     }
     
-    func hitTest(_ point: CGPoint) -> Bool {
-        if !boundingBox.contains(point) { return false }
-        let tolerance: CGFloat = 15.0
-        
+    func hitDistance(to point: CGPoint, tolerance: CGFloat = 15.0, boundingPadding: CGFloat = 20.0) -> CGFloat? {
+        let paddedBounds = boundingBox.insetBy(dx: -(boundingPadding - 20.0), dy: -(boundingPadding - 20.0))
+        if !paddedBounds.contains(point) { return nil }
+
         switch type {
-        case .label: return true
-        case .point(let p): return point.distance(to: p) < tolerance
-        case .line(let s, let e): return point.distanceToLineSegment(start: s, end: e) < tolerance
+        case .label(_, let p, _):
+            return point.distance(to: p)
+        case .point(let p):
+            let d = point.distance(to: p)
+            return d < tolerance ? d : nil
+        case .line(let s, let e):
+            let d = point.distanceToLineSegment(start: s, end: e)
+            return d < tolerance ? d : nil
+        case .triangle(let s, let e):
+            let p = trianglePoints(start: s, end: e)
+            var triPath = Path()
+            triPath.move(to: p[0])
+            triPath.addLine(to: p[1])
+            triPath.addLine(to: p[2])
+            triPath.closeSubpath()
+            if style.fillType != .none && triPath.contains(point) { return 0.0 }
+            let d = min(
+                point.distanceToLineSegment(start: p[0], end: p[1]),
+                point.distanceToLineSegment(start: p[1], end: p[2]),
+                point.distanceToLineSegment(start: p[2], end: p[0])
+            )
+            return d < tolerance ? d : nil
         case .rectangle(let s, let e):
             let rect = CGRect(x: min(s.x, e.x), y: min(s.y, e.y), width: abs(e.x - s.x), height: abs(e.y - s.y))
-            if style.fillType != .none && rect.contains(point) { return true }
+            if style.fillType != .none && rect.contains(point) { return 0.0 }
             let p1 = CGPoint(x: rect.minX, y: rect.minY), p2 = CGPoint(x: rect.maxX, y: rect.minY)
             let p3 = CGPoint(x: rect.maxX, y: rect.maxY), p4 = CGPoint(x: rect.minX, y: rect.maxY)
-            return point.distanceToLineSegment(start: p1, end: p2) < tolerance || point.distanceToLineSegment(start: p2, end: p3) < tolerance || point.distanceToLineSegment(start: p3, end: p4) < tolerance || point.distanceToLineSegment(start: p4, end: p1) < tolerance
+            let d = min(
+                point.distanceToLineSegment(start: p1, end: p2),
+                point.distanceToLineSegment(start: p2, end: p3),
+                point.distanceToLineSegment(start: p3, end: p4),
+                point.distanceToLineSegment(start: p4, end: p1)
+            )
+            return d < tolerance ? d : nil
         case .ellipse(let s, let e):
             let rect = CGRect(x: min(s.x, e.x), y: min(s.y, e.y), width: abs(e.x - s.x), height: abs(e.y - s.y))
-            if style.fillType != .none && rect.contains(point) { return true }
+            if style.fillType != .none && rect.contains(point) { return 0.0 }
             let rx = rect.width / 2.0, ry = rect.height / 2.0
-            if rx <= 0 || ry <= 0 { return false }
+            if rx <= 0 || ry <= 0 { return nil }
             let distToEdge = abs(sqrt(pow((point.x - rect.midX) / rx, 2) + pow((point.y - rect.midY) / ry, 2)) - 1.0) * min(rx, ry)
-            return distToEdge < tolerance
+            return distToEdge < tolerance ? distToEdge : nil
         case .smoothCurve(let pts, let isClosed):
-            for i in 0 ..< pts.count - 1 { if point.distanceToLineSegment(start: pts[i], end: pts[i+1]) < tolerance { return true } }
-            if isClosed, let f = pts.first, let l = pts.last { if point.distanceToLineSegment(start: l, end: f) < tolerance { return true } }
-            return false
+            var minDist: CGFloat = .infinity
+            for i in 0 ..< pts.count - 1 {
+                minDist = min(minDist, point.distanceToLineSegment(start: pts[i], end: pts[i+1]))
+            }
+            if isClosed, let f = pts.first, let l = pts.last {
+                minDist = min(minDist, point.distanceToLineSegment(start: l, end: f))
+            }
+            return minDist < tolerance ? minDist : nil
+        case .scribble(let pts):
+            guard pts.count > 1 else { return nil }
+            var minDist: CGFloat = .infinity
+            for i in 0 ..< pts.count - 1 {
+                minDist = min(minDist, point.distanceToLineSegment(start: pts[i], end: pts[i+1]))
+            }
+            return minDist < tolerance ? minDist : nil
         }
+    }
+
+    func hitTest(_ point: CGPoint, tolerance: CGFloat = 15.0, boundingPadding: CGFloat = 20.0) -> Bool {
+        hitDistance(to: point, tolerance: tolerance, boundingPadding: boundingPadding) != nil
+    }
+
+    private func trianglePoints(start: CGPoint, end: CGPoint) -> [CGPoint] {
+        let minX = min(start.x, end.x)
+        let maxX = max(start.x, end.x)
+        let minY = min(start.y, end.y)
+        let maxY = max(start.y, end.y)
+        let apex = CGPoint(x: (minX + maxX) / 2.0, y: minY)
+        let rightBase = CGPoint(x: maxX, y: maxY)
+        let leftBase = CGPoint(x: minX, y: maxY)
+        return [apex, rightBase, leftBase]
     }
 }
 

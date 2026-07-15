@@ -143,6 +143,15 @@ struct ShapeRenderer: View {
             let w = abs(e.x - s.x)
             let h = abs(e.y - s.y)
             p.addEllipse(in: CGRect(x: min(s.x, e.x), y: min(s.y, e.y), width: w, height: h))
+        case .triangle(let s, let e):
+            let minX = min(s.x, e.x)
+            let maxX = max(s.x, e.x)
+            let minY = min(s.y, e.y)
+            let maxY = max(s.y, e.y)
+            p.move(to: CGPoint(x: (minX + maxX) / 2.0, y: minY))
+            p.addLine(to: CGPoint(x: maxX, y: maxY))
+            p.addLine(to: CGPoint(x: minX, y: maxY))
+            p.closeSubpath()
         case .rectangle(let s, let e):
             let w = abs(e.x - s.x)
             let h = abs(e.y - s.y)
@@ -154,6 +163,10 @@ struct ShapeRenderer: View {
             p.addEllipse(in: CGRect(x: pt.x - 4.0, y: pt.y - 4.0, width: 8.0, height: 8.0))
         case .smoothCurve(let pts, let c):
             p.addCentripetalCatmullRomSpline(points: pts, isClosed: c)
+        case .scribble(let pts):
+            guard let first = pts.first else { break }
+            p.move(to: first)
+            p.addLines(pts.dropFirst())
         case .label: break
         }
         return p
@@ -313,6 +326,16 @@ struct LivePreviewRenderer: View {
                         if viewModel.currentTool == .rectangle {
                             p.addRect(CGRect(x: min(s.x, e.x), y: min(s.y, e.y), width: w, height: h))
                         }
+                        if viewModel.currentTool == .triangle {
+                            let minX = min(s.x, e.x)
+                            let maxX = max(s.x, e.x)
+                            let minY = min(s.y, e.y)
+                            let maxY = max(s.y, e.y)
+                            p.move(to: CGPoint(x: (minX + maxX) / 2.0, y: minY))
+                            p.addLine(to: CGPoint(x: maxX, y: maxY))
+                            p.addLine(to: CGPoint(x: minX, y: maxY))
+                            p.closeSubpath()
+                        }
                         if viewModel.currentTool == .ellipse {
                             p.addEllipse(in: CGRect(x: min(s.x, e.x), y: min(s.y, e.y), width: w, height: h))
                         }
@@ -323,9 +346,19 @@ struct LivePreviewRenderer: View {
                 }
             }
             if !viewModel.currentPoints.isEmpty {
-                let isClosingPreview = viewModel.snapDotLocation != nil && viewModel.currentTool == .curve
-                Path { p in p.addCentripetalCatmullRomSpline(points: viewModel.currentPoints, isClosed: isClosingPreview) }
-                    .stroke(color.opacity(0.5), style: StrokeStyle(lineWidth: 2.5))
+                if viewModel.currentTool == .curve {
+                    let isClosingPreview = viewModel.snapDotLocation != nil
+                    Path { p in p.addCentripetalCatmullRomSpline(points: viewModel.currentPoints, isClosed: isClosingPreview) }
+                        .stroke(color.opacity(0.5), style: StrokeStyle(lineWidth: 2.5))
+                } else if viewModel.currentTool == .scribble {
+                    Path { p in
+                        if let first = viewModel.currentPoints.first {
+                            p.move(to: first)
+                            p.addLines(viewModel.currentPoints.dropFirst())
+                        }
+                    }
+                    .stroke(color.opacity(0.5), style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
+                }
             }
         }
     }

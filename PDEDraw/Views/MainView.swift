@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MainView: View {
     @StateObject var viewModel = CanvasViewModel()
+    private let toolbarTools: [DrawingTool] = [.move, .curve, .scribble, .triangle, .rectangle, .ellipse, .line, .point, .label, .eraser]
     @State private var showInspector = false
     @State private var showPreview = false
     @State private var showToast = false
@@ -119,10 +120,10 @@ struct MainView: View {
                     
                     // 4. The "visionOS" Floating Dock
                     HStack(spacing: 8) {
-                        ForEach([DrawingTool.move, .curve, .rectangle, .ellipse, .line, .point, .label, .eraser], id: \.self) { t in
+                        ForEach(toolbarTools, id: \.self) { t in
                             let isActive = viewModel.currentTool == t
                             Button(action: {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { viewModel.currentTool = t }
+                                withAnimation(.spring(response: 0.28, dampingFraction: 0.72, blendDuration: 0.05)) { viewModel.currentTool = t }
                                 Haptic.shared.light()
                             }) {
                                 Image(systemName: icon(t, isActive: isActive))
@@ -166,6 +167,7 @@ struct MainView: View {
                                 if !isDraggingDock {
                                     dockDragStart = dockOffset
                                     isDraggingDock = true
+                                    Haptic.shared.light()
                                 }
                                 let proposed = CGSize(
                                     width: dockDragStart.width + value.translation.width,
@@ -173,14 +175,32 @@ struct MainView: View {
                                 )
                                 dockOffset = clampedDockOffset(proposed, in: geo.size)
                             }
-                            .onEnded { _ in
-                                withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
-                                    dockOffset = clampedDockOffset(dockOffset, in: geo.size)
+                            .onEnded { value in
+                                let momentumX = value.predictedEndTranslation.width - value.translation.width
+                                let momentumY = value.predictedEndTranslation.height - value.translation.height
+                                let projected = CGSize(
+                                    width: dockOffset.width + momentumX * 0.18,
+                                    height: dockOffset.height + momentumY * 0.18
+                                )
+                                withAnimation(.interactiveSpring(response: 0.3, dampingFraction: 0.78, blendDuration: 0.15)) {
+                                    dockOffset = clampedDockOffset(projected, in: geo.size)
                                     isDraggingDock = false
                                 }
                             }
                     )
-                    .animation(.spring(response: 0.25, dampingFraction: 0.82), value: isDraggingDock)
+                    .overlay(
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.white.opacity(isDraggingDock ? 0.22 : 0.12), Color.white.opacity(0.02)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .padding(1.5)
+                            .blendMode(.screen)
+                    )
+                    .animation(.interactiveSpring(response: 0.3, dampingFraction: 0.8), value: isDraggingDock)
                 }
                 
                 // 5. The Pro Inspector Panel
@@ -205,6 +225,8 @@ struct MainView: View {
         switch t {
         case .move: return isActive ? "hand.point.up.left.fill" : "hand.point.up.left"
         case .curve: return "scribble.variable"
+        case .scribble: return isActive ? "signature" : "signature"
+        case .triangle: return isActive ? "triangle.fill" : "triangle"
         case .rectangle: return isActive ? "rectangle.fill" : "rectangle"
         case .ellipse: return isActive ? "circle.fill" : "circle"
         case .line: return "line.diagonal"
@@ -215,7 +237,8 @@ struct MainView: View {
     }
     
     private func clampedDockOffset(_ offset: CGSize, in size: CGSize) -> CGSize {
-        let maxHorizontal = max(0.0, (size.width - 360.0) / 2.0)
+        let dockWidthEstimate = CGFloat(toolbarTools.count) * 52.0 + 90.0
+        let maxHorizontal = max(0.0, (size.width - dockWidthEstimate) / 2.0)
         let minVertical = -(size.height * 0.55)
         let maxVertical = 0.0
         let x = min(max(offset.width, -maxHorizontal), maxHorizontal)
