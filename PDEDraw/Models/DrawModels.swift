@@ -79,11 +79,52 @@ struct DrawnShape: Identifiable {
     
     var snapPoints: [CGPoint] {
         switch type {
-        case .rectangle(let s, let e), .ellipse(let s, let e):
+        case .rectangle(let s, let e):
             let c = CGPoint(x: (s.x + e.x) / 2.0, y: (s.y + e.y) / 2.0)
-            return [s, e, c, CGPoint(x: s.x, y: e.y), CGPoint(x: e.x, y: s.y)]
+            let p1 = CGPoint(x: min(s.x, e.x), y: min(s.y, e.y))
+            let p2 = CGPoint(x: max(s.x, e.x), y: min(s.y, e.y))
+            let p3 = CGPoint(x: max(s.x, e.x), y: max(s.y, e.y))
+            let p4 = CGPoint(x: min(s.x, e.x), y: max(s.y, e.y))
+            return [
+                p1, p2, p3, p4, c,
+                CGPoint(x: c.x, y: p1.y),
+                CGPoint(x: p3.x, y: c.y),
+                CGPoint(x: c.x, y: p3.y),
+                CGPoint(x: p1.x, y: c.y)
+            ]
+        case .ellipse(let s, let e):
+            let minX = min(s.x, e.x)
+            let maxX = max(s.x, e.x)
+            let minY = min(s.y, e.y)
+            let maxY = max(s.y, e.y)
+            let c = CGPoint(x: (minX + maxX) / 2.0, y: (minY + maxY) / 2.0)
+            let rx = (maxX - minX) / 2.0
+            let ry = (maxY - minY) / 2.0
+            let diagonal = CGFloat(0.70710678118)
+            return [
+                CGPoint(x: minX, y: minY),
+                CGPoint(x: maxX, y: minY),
+                CGPoint(x: maxX, y: maxY),
+                CGPoint(x: minX, y: maxY),
+                c,
+                CGPoint(x: c.x, y: c.y - ry),
+                CGPoint(x: c.x + rx, y: c.y),
+                CGPoint(x: c.x, y: c.y + ry),
+                CGPoint(x: c.x - rx, y: c.y),
+                CGPoint(x: c.x + rx * diagonal, y: c.y - ry * diagonal),
+                CGPoint(x: c.x + rx * diagonal, y: c.y + ry * diagonal),
+                CGPoint(x: c.x - rx * diagonal, y: c.y + ry * diagonal),
+                CGPoint(x: c.x - rx * diagonal, y: c.y - ry * diagonal)
+            ]
         case .line(let s, let e): return [s, e, CGPoint(x: (s.x + e.x) / 2.0, y: (s.y + e.y) / 2.0)]
-        case .smoothCurve(let p, _): return [p.first, p.last].compactMap { $0 }
+        case .smoothCurve(let p, _):
+            guard p.count > 2 else { return [p.first, p.last].compactMap { $0 } }
+            let strideCount = max(1, p.count / 8)
+            var sampled = [p.first, p.last].compactMap { $0 }
+            for index in stride(from: strideCount, to: p.count - 1, by: strideCount) {
+                sampled.append(p[index])
+            }
+            return sampled
         case .point(let p): return [p]
         case .label(_, let p, _): return [p]
         }

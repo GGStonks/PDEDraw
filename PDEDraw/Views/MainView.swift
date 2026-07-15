@@ -5,6 +5,9 @@ struct MainView: View {
     @State private var showInspector = false
     @State private var showPreview = false
     @State private var showToast = false
+    @State private var dockOffset: CGSize = .zero
+    @State private var dockDragStart: CGSize = .zero
+    @State private var isDraggingDock = false
 
     var body: some View {
         GeometryReader { geo in
@@ -154,7 +157,30 @@ struct MainView: View {
                     .clipShape(Capsule())
                     .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.5)) // Glass specular highlight
                     .shadow(color: .black.opacity(0.35), radius: 28, y: 15)
+                    .scaleEffect(isDraggingDock ? 1.03 : 1.0)
+                    .offset(dockOffset)
                     .padding(.bottom, geo.safeAreaInsets.bottom + 16)
+                    .gesture(
+                        DragGesture(minimumDistance: 1)
+                            .onChanged { value in
+                                if !isDraggingDock {
+                                    dockDragStart = dockOffset
+                                    isDraggingDock = true
+                                }
+                                let proposed = CGSize(
+                                    width: dockDragStart.width + value.translation.width,
+                                    height: dockDragStart.height + value.translation.height
+                                )
+                                dockOffset = clampedDockOffset(proposed, in: geo.size)
+                            }
+                            .onEnded { _ in
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
+                                    dockOffset = clampedDockOffset(dockOffset, in: geo.size)
+                                    isDraggingDock = false
+                                }
+                            }
+                    )
+                    .animation(.spring(response: 0.25, dampingFraction: 0.82), value: isDraggingDock)
                 }
                 
                 // 5. The Pro Inspector Panel
@@ -186,6 +212,15 @@ struct MainView: View {
         case .label: return "textformat"
         case .eraser: return isActive ? "eraser.fill" : "eraser"
         }
+    }
+    
+    private func clampedDockOffset(_ offset: CGSize, in size: CGSize) -> CGSize {
+        let maxHorizontal = max(0.0, (size.width - 360.0) / 2.0)
+        let minVertical = -(size.height * 0.55)
+        let maxVertical = 0.0
+        let x = min(max(offset.width, -maxHorizontal), maxHorizontal)
+        let y = min(max(offset.height, minVertical), maxVertical)
+        return CGSize(width: x, height: y)
     }
 }
 
