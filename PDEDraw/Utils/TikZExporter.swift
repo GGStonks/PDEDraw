@@ -45,6 +45,20 @@ struct TikZExporter {
         case .ellipse(let s, let e):
             let cx = (s.x + e.x) / 2.0 / scale, cy = (canvasHeight - (s.y + e.y) / 2.0) / scale
             return String(format: "(%.2f, %.2f) ellipse (%.2f and %.2f)", cx, cy, abs(e.x-s.x)/2.0/scale, abs(e.y-s.y)/2.0/scale)
+        case .triangle(let s, let e):
+            let minX = min(s.x, e.x)
+            let maxX = max(s.x, e.x)
+            let minY = min(s.y, e.y)
+            let maxY = max(s.y, e.y)
+            let apex = CGPoint(x: (minX + maxX) / 2.0, y: minY)
+            let rightBase = CGPoint(x: maxX, y: maxY)
+            let leftBase = CGPoint(x: minX, y: maxY)
+            return String(
+                format: "(%.2f, %.2f) -- (%.2f, %.2f) -- (%.2f, %.2f) -- cycle",
+                apex.x / scale, (canvasHeight - apex.y) / scale,
+                rightBase.x / scale, (canvasHeight - rightBase.y) / scale,
+                leftBase.x / scale, (canvasHeight - leftBase.y) / scale
+            )
         case .rectangle(let s, let e):
             return String(format: "(%.2f, %.2f) rectangle (%.2f, %.2f)", s.x/scale, (canvasHeight-s.y)/scale, e.x/scale, (canvasHeight-e.y)/scale)
         case .line(let s, let e):
@@ -52,6 +66,9 @@ struct TikZExporter {
         case .smoothCurve(let pts, let closed):
             let coords = pts.map { String(format: "(%.2f, %.2f)", $0.x/scale, (canvasHeight-$0.y)/scale) }.joined(separator: " ")
             return "\(closed ? "plot [smooth cycle]" : "plot [smooth]") coordinates {\(coords)}"
+        case .scribble(let pts):
+            let coords = pts.map { String(format: "(%.2f, %.2f)", $0.x/scale, (canvasHeight-$0.y)/scale) }.joined(separator: " -- ")
+            return coords
         default: return ""
         }
     }

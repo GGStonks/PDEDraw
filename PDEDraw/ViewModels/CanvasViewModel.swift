@@ -30,6 +30,11 @@ class CanvasViewModel: ObservableObject {
     private let snapPointThreshold: CGFloat = 20.0
     private let edgeSnapThreshold: CGFloat = 12.0
     private let curveSamplingDistance: CGFloat = 4.5
+    private let scribbleSamplingDistance: CGFloat = 2.5
+    private let moveHitTolerance: CGFloat = 15.0
+    private let moveBoundingPadding: CGFloat = 22.0
+    private let eraserHitTolerance: CGFloat = 8.0
+    private let eraserBoundingPadding: CGFloat = 10.0
 
     private func ensureCachePrepared() {
         if !isDragging {
@@ -42,15 +47,15 @@ class CanvasViewModel: ObservableObject {
     func handleDrag(value: DragGesture.Value) {
         if currentTool == .label { return }
         
-        ensureCachePrepared()
-        
         let rawLoc = value.location
-        let snappedLoc = findSnapPoint(near: rawLoc)
+        let usesSnapEngine: Bool = currentTool != .scribble
+        if usesSnapEngine { ensureCachePrepared() }
+        let snappedLoc = usesSnapEngine ? findSnapPoint(near: rawLoc) : rawLoc
         
         switch currentTool {
         case .move:
             if grabbedShapeID == nil {
-                if let hitIndex = shapes.lastIndex(where: { $0.hitTest(value.startLocation) }) {
+                if let hitIndex = bestHitShapeIndex(at: value.startLocation, tolerance: moveHitTolerance, boundingPadding: moveBoundingPadding) {
                     grabbedShapeID = shapes[hitIndex].id
                     if !hasCapturedMoveSnapshot {
                         pushUndoSnapshot()
@@ -79,6 +84,14 @@ class CanvasViewModel: ObservableObject {
                     appendCurvePoint(snappedLoc)
                 }
             }
+
+        case .scribble:
+            if currentPoints.isEmpty {
+                currentPoints.append(value.startLocation)
+                currentPoints.append(rawLoc)
+            } else if let last = currentPoints.last, rawLoc.distance(to: last) > scribbleSamplingDistance {
+                currentPoints.append(rawLoc)
+            }
             
         case .line:
             if currentDragStart == nil { currentDragStart = findSnapPoint(near: value.startLocation) }
@@ -94,7 +107,7 @@ class CanvasViewModel: ObservableObject {
                 }
             }
             
-        case .rectangle, .point:
+        case .triangle, .rectangle, .point:
             if currentDragStart == nil { currentDragStart = findSnapPoint(near: value.startLocation) }
             currentDragEnd = snappedLoc
             
@@ -125,7 +138,7 @@ class CanvasViewModel: ObservableObject {
             }
             
         case .eraser:
-            if let hitIndex = shapes.lastIndex(where: { $0.hitTest(rawLoc) }) {
+            if let hitIndex = bestHitShapeIndex(at: rawLoc, tolerance: eraserHitTolerance, boundingPadding: eraserBoundingPadding) {
                 pushUndoSnapshot()
                 shapes.remove(at: hitIndex)
                 Haptic.shared.light()
@@ -153,9 +166,13 @@ class CanvasViewModel: ObservableObject {
             let closed = (snapDotLocation == first) || (first.distance(to: last) < 18.0)
             pushUndoSnapshot()
             shapes.append(DrawnShape(type: .smoothCurve(points: currentPoints, isClosed: closed), style: currentStyle))
+        } else if currentTool == .scribble && currentPoints.count > 1 {
+            pushUndoSnapshot()
+            shapes.append(DrawnShape(type: .scribble(points: currentPoints), style: currentStyle))
         } else if let s = currentDragStart, let e = currentDragEnd {
             let type: ShapeType
             switch currentTool {
+            case .triangle: type = .triangle(start: s, end: e)
             case .rectangle: type = .rectangle(start: s, end: e)
             case .ellipse: type = .ellipse(start: s, end: e)
             case .line: type = .line(start: s, end: e)
@@ -258,10 +275,12 @@ class CanvasViewModel: ObservableObject {
         guard let i = shapes.firstIndex(where: { $0.id == id }) else { return }
         switch shapes[i].type {
         case .ellipse(let s, let e): shapes[i].type = .ellipse(start: s.offset(dx: dx, dy: dy), end: e.offset(dx: dx, dy: dy))
+        case .triangle(let s, let e): shapes[i].type = .triangle(start: s.offset(dx: dx, dy: dy), end: e.offset(dx: dx, dy: dy))
         case .rectangle(let s, let e): shapes[i].type = .rectangle(start: s.offset(dx: dx, dy: dy), end: e.offset(dx: dx, dy: dy))
         case .line(let s, let e): shapes[i].type = .line(start: s.offset(dx: dx, dy: dy), end: e.offset(dx: dx, dy: dy))
         case .point(let p): shapes[i].type = .point(position: p.offset(dx: dx, dy: dy))
         case .smoothCurve(let pts, let c): shapes[i].type = .smoothCurve(points: pts.map { $0.offset(dx: dx, dy: dy) }, isClosed: c)
+        case .scribble(let pts): shapes[i].type = .scribble(points: pts.map { $0.offset(dx: dx, dy: dy) })
         case .label(let t, let p, let sc): shapes[i].type = .label(text: t, position: p.offset(dx: dx, dy: dy), scale: sc)
         }
     }
@@ -321,5 +340,21 @@ class CanvasViewModel: ObservableObject {
     private func pushUndoSnapshot() {
         undoStack.append(shapes)
         canUndo = true
+    }
+
+    private func bestHitShapeIndex(at point: CGPoint, tolerance: CGFloat, boundingPadding: CGFloat) -> Int? {
+        var bestIndex: Int? = nil
+        var bestDistance: CGFloat = .infinity
+
+        for index in shapes.indices {
+            if let distance = shapes[index].hitDistance(to: point, tolerance: tolerance, boundingPadding: boundingPadding) {
+                if distance < bestDistance - 0.1 || (abs(distance - bestDistance) <= 0.1 && (bestIndex == nil || index > bestIndex!)) {
+                    bestDistance = distance
+                    bestIndex = index
+                }
+            }
+        }
+
+        return bestIndex
     }
 }
