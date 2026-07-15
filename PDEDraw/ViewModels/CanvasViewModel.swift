@@ -27,6 +27,9 @@ class CanvasViewModel: ObservableObject {
     private var isDragging: Bool = false
     private var undoStack: [[DrawnShape]] = []
     private var hasCapturedMoveSnapshot: Bool = false
+    private let snapPointThreshold: CGFloat = 20.0
+    private let edgeSnapThreshold: CGFloat = 12.0
+    private let curveSamplingDistance: CGFloat = 4.5
 
     private func ensureCachePrepared() {
         if !isDragging {
@@ -66,14 +69,14 @@ class CanvasViewModel: ObservableObject {
         case .curve:
             if currentPoints.isEmpty { currentPoints.append(value.startLocation) }
             
-            if let last = currentPoints.last, rawLoc.distance(to: last) > 6.0 {
+            if let last = currentPoints.last, rawLoc.distance(to: last) > curveSamplingDistance {
                 let first = currentPoints.first!
                 if rawLoc.distance(to: first) < 18.0 && currentPoints.count > 5 {
                     if snapDotLocation != first { Haptic.shared.snap() }
                     snapDotLocation = first
                 } else {
                     snapDotLocation = nil
-                    currentPoints.append(snappedLoc)
+                    appendCurvePoint(snappedLoc)
                 }
             }
             
@@ -181,35 +184,44 @@ class CanvasViewModel: ObservableObject {
     }
 
     private func findSnapPoint(near point: CGPoint) -> CGPoint {
-        var nearestPointSnap: (point: CGPoint, distance: CGFloat)? = nil
-        for candidate in cachedIntersections + cachedSnapPoints {
-            let distance = point.distance(to: candidate)
-            if distance <= pointSnapThreshold && (nearestPointSnap == nil || distance < nearestPointSnap!.distance) {
-                nearestPointSnap = (candidate, distance)
+        var bestCandidate: CGPoint? = nil
+        var bestScore: CGFloat = .infinity
+        
+        for intersect in cachedIntersections {
+            let distance = point.distance(to: intersect)
+            if distance < snapPointThreshold && distance < bestScore {
+                bestCandidate = intersect
+                bestScore = distance
             }
         }
         
-        if let nearest = nearestPointSnap {
-            if !isCurrentlySnapping { Haptic.shared.snap() }
-            isCurrentlySnapping = true
-            snapDotLocation = nearest.point
-            return nearest.point
+        for snapPoint in cachedSnapPoints {
+            let distance = point.distance(to: snapPoint)
+            let weightedScore = distance - 0.8
+            if distance < snapPointThreshold && weightedScore < bestScore {
+                bestCandidate = snapPoint
+                bestScore = weightedScore
+            }
         }
         
-        var nearestEdgeSnap: (point: CGPoint, distance: CGFloat)? = nil
         for shape in shapes {
             if let edgeSnap = shape.closestPointOnEdge(to: point) {
                 let distance = point.distance(to: edgeSnap)
-                if distance <= edgeSnapThreshold && (nearestEdgeSnap == nil || distance < nearestEdgeSnap!.distance) {
-                    nearestEdgeSnap = (edgeSnap, distance)
+                if distance < edgeSnapThreshold {
+                    let weightedScore = distance + 0.5
+                    if weightedScore < bestScore {
+                        bestCandidate = edgeSnap
+                        bestScore = weightedScore
+                    }
                 }
             }
         }
         
-        if let nearest = nearestEdgeSnap {
-            isCurrentlySnapping = false
-            snapDotLocation = nearest.point
-            return nearest.point
+        if let bestCandidate {
+            if !isCurrentlySnapping { Haptic.shared.snap() }
+            isCurrentlySnapping = true
+            snapDotLocation = bestCandidate
+            return bestCandidate
         }
         
         isCurrentlySnapping = false
@@ -252,6 +264,28 @@ class CanvasViewModel: ObservableObject {
         case .smoothCurve(let pts, let c): shapes[i].type = .smoothCurve(points: pts.map { $0.offset(dx: dx, dy: dy) }, isClosed: c)
         case .label(let t, let p, let sc): shapes[i].type = .label(text: t, position: p.offset(dx: dx, dy: dy), scale: sc)
         }
+    }
+    
+    private func appendCurvePoint(_ point: CGPoint) {
+        guard let last = currentPoints.last else {
+            currentPoints.append(point)
+            return
+        }
+        
+        if point.distance(to: last) < curveSamplingDistance { return }
+        
+        if currentPoints.count >= 2 {
+            let previous = currentPoints[currentPoints.count - 2]
+            let projected = point.project(start: previous, end: last)
+            let deviation = point.distance(to: projected)
+            let pathStep = point.distance(to: last)
+            if deviation < 1.2 && pathStep < 10.0 {
+                currentPoints[currentPoints.count - 1] = point
+                return
+            }
+        }
+        
+        currentPoints.append(point)
     }
     
     func addLabel(text: String, position: CGPoint) {
