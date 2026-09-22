@@ -8,7 +8,7 @@ class Haptic {
 }
 
 enum DrawingTool: String, CaseIterable {
-    case move, curve, scribble, rectangle, ellipse, line, point, label, eraser
+    case move, curve, scribble, lasso, rectangle, ellipse, line, point, label, eraser
 }
 
 enum LineStyle: String, CaseIterable {

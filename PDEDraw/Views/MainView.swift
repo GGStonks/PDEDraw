@@ -1,14 +1,35 @@
 import SwiftUI
+import PhotosUI
+
+// MARK: - Activity View for Safe Share Sheet on iPad/Mac
+struct ActivityView: UIViewControllerRepresentable {
+    let activityItems: [Any]
+    let applicationActivities: [UIActivity]?
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: applicationActivities)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+struct ShareWrapper: Identifiable {
+    let id = UUID()
+    let url: URL
+}
 
 struct MainView: View {
     @StateObject var viewModel = CanvasViewModel()
-    private let toolbarTools: [DrawingTool] = [.move, .curve, .scribble, .rectangle, .ellipse, .line, .point, .label, .eraser]
     @State private var showInspector = false
     @State private var showPreview = false
     @State private var showToast = false
-    @State private var dockOffset: CGSize = .zero
-    @State private var dockDragStart: CGSize = .zero
-    @State private var isDraggingDock = false
+    
+    @State private var selectedPhoto: PhotosPickerItem? = nil
+    @State private var shareWrapper: ShareWrapper? = nil
+    
+    // Draggable Toolbar State
+    @State private var paletteOffset: CGSize = CGSize(width: 24, height: -24)
+    @GestureState private var dragOffset: CGSize = .zero
 
     var body: some View {
         GeometryReader { geo in
@@ -37,7 +58,7 @@ struct MainView: View {
                 // 1. The Canvas
                 CanvasView(viewModel: viewModel)
                 
-                // 2. Premium Toast Notification (AirPods Style)
+                // 2. Premium Toast Notification
                 if showToast {
                     VStack {
                         HStack(spacing: 12) {
@@ -51,188 +72,262 @@ struct MainView: View {
                         }
                         .padding(.horizontal, 20)
                         .padding(.vertical, 12)
-                        .liquidGlass(cornerRadius: 24)
+                        .glassEffect(in: RoundedRectangle(cornerRadius: 24))
                         .transition(.move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.9)))
                         
                         Spacer()
                     }
-                    .padding(.top, geo.safeAreaInsets.top + 16)
+                    .padding(.top, 16)
                     .zIndex(3)
                 }
                 
-                // 3. Top Action Bar & Bottom Dock
+                // 3. Top Action Bar
                 VStack {
-                    HStack {
-                        // Clear Canvas Button
-                        Button(action: { viewModel.clear() }) {
-                            Image(systemName: "trash")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(.red.opacity(0.95))
-                                .frame(width: 44, height: 44)
-                                .background(.ultraThinMaterial)
-                                .clipShape(Circle())
-                                .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
-                                .shadow(color: .black.opacity(0.4), radius: 10, y: 6)
-                        }
-                        
-                        Button(action: { viewModel.undo() }) {
-                            Image(systemName: "arrow.uturn.backward")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(viewModel.canUndo ? .white : .white.opacity(0.35))
-                                .frame(width: 44, height: 44)
-                                .background(.ultraThinMaterial)
-                                .clipShape(Circle())
-                                .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
-                                .shadow(color: .black.opacity(0.4), radius: 10, y: 6)
-                        }
-                        .disabled(!viewModel.canUndo)
-                        
-                        Spacer()
-                        
-                        // Preview Button
-                        Button(action: { showPreview = true; Haptic.shared.light() }) {
-                            Image(systemName: "eye")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(.primary)
-                                .frame(width: 44, height: 44)
-                                .background(.ultraThinMaterial)
-                                .clipShape(Circle())
-                                .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
-                                .shadow(color: .black.opacity(0.4), radius: 10, y: 6)
-                        }
-                        
-                        // Copy TikZ Button (Premium Pill)
-                        Button(action: {
-                            UIPasteboard.general.string = TikZExporter.generateCode(from: viewModel.shapes, canvasSize: geo.size)
-                            Haptic.shared.success()
-                            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) { showToast = true }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                                withAnimation(.easeOut(duration: 0.3)) { showToast = false }
-                            }
-                        }) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "doc.on.clipboard.fill")
-                                Text("TikZ")
-                            }
-                            .font(.system(size: 15, weight: .bold, design: .rounded))
-                            .padding(.horizontal, 16)
-                            .frame(height: 44)
-                            .background(
-                                LinearGradient(colors: [Color(red: 0.18, green: 0.39, blue: 0.94), Color(red: 0.35, green: 0.25, blue: 0.96)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            )
-                            .foregroundColor(.white)
-                            .clipShape(Capsule())
-                            .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 0.5))
-                            .shadow(color: Color(red: 0.18, green: 0.39, blue: 0.94).opacity(0.35), radius: 14, y: 8)
-                        }
-                    }.padding(.horizontal, 20).padding(.top, 10)
-                    
+                    TopActionBar
                     Spacer()
-                    
-                    // 4. The "visionOS" Floating Dock
-                    HStack(spacing: 8) {
-                        ForEach(toolbarTools, id: \.self) { t in
-                            let isActive = viewModel.currentTool == t
-                            Button(action: {
-                                withAnimation(.spring(response: 0.28, dampingFraction: 0.72, blendDuration: 0.05)) { viewModel.currentTool = t }
-                                Haptic.shared.light()
-                            }) {
-                                Image(systemName: icon(t, isActive: isActive))
-                                    .font(.system(size: 18, weight: isActive ? .bold : .medium))
-                                    .foregroundColor(isActive ? .blue : .primary.opacity(0.7))
-                                    .frame(width: 44, height: 44)
-                                    .background(isActive ? Color(UIColor.systemBackground).opacity(0.8) : Color.clear)
-                                    .clipShape(Circle())
-                                    .shadow(color: isActive ? .black.opacity(0.1) : .clear, radius: 4, y: 2)
-                                    .scaleEffect(isActive ? 1.1 : 1.0) // Pops out when selected
-                            }
-                        }
-                        
-                        Divider().frame(height: 24).padding(.horizontal, 4)
-                        
-                        // Inspector Toggle
-                        Button(action: {
-                            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { showInspector.toggle() }
-                            Haptic.shared.light()
-                        }) {
-                            Image(systemName: "slider.horizontal.3")
-                                .font(.system(size: 18, weight: showInspector ? .bold : .medium))
-                                .foregroundColor(showInspector ? .white : .primary.opacity(0.7))
-                                .frame(width: 44, height: 44)
-                                .background(showInspector ? Color.blue : Color.clear)
-                                .clipShape(Circle())
-                                .shadow(color: showInspector ? .blue.opacity(0.4) : .clear, radius: 8, y: 4)
-                        }
-                    }
-                    .padding(8)
-                    .scaleEffect(isDraggingDock ? 1.03 : 1.0)
-                    .offset(dockOffset)
-                    .padding(.bottom, geo.safeAreaInsets.bottom + 16)
+                }
+                .padding(.horizontal, 24)
+                
+                // 4. Floating Draggable Palette
+                FloatingPalette
+                    .position(
+                        x: geo.size.width / 2 + paletteOffset.width + dragOffset.width,
+                        y: geo.size.height - 90 + paletteOffset.height + dragOffset.height
+                    )
+                    // Apply drag to the entire ZStack bounding box through the background layer setup
                     .gesture(
-                        DragGesture(minimumDistance: 1)
-                            .onChanged { value in
-                                if !isDraggingDock {
-                                    dockDragStart = dockOffset
-                                    isDraggingDock = true
-                                    Haptic.shared.light()
-                                }
-                                let proposed = CGSize(
-                                    width: dockDragStart.width + value.translation.width,
-                                    height: dockDragStart.height + value.translation.height
-                                )
-                                dockOffset = clampedDockOffset(proposed, in: geo.size)
+                        DragGesture(minimumDistance: 0)
+                            .updating($dragOffset) { value, state, _ in
+                                state = value.translation
                             }
                             .onEnded { value in
-                                let momentumX = value.predictedEndTranslation.width - value.translation.width
-                                let momentumY = value.predictedEndTranslation.height - value.translation.height
-                                let projected = CGSize(
-                                    width: dockOffset.width + momentumX * 0.18,
-                                    height: dockOffset.height + momentumY * 0.18
-                                )
-                                withAnimation(.interactiveSpring(response: 0.3, dampingFraction: 0.78, blendDuration: 0.15)) {
-                                    dockOffset = clampedDockOffset(projected, in: geo.size)
-                                    isDraggingDock = false
+                                paletteOffset.width += value.translation.width
+                                paletteOffset.height += value.translation.height
+                                
+                                // Keep it inside screen bounds safely
+                                let margin: CGFloat = 60
+                                let minX: CGFloat = -geo.size.width / 2 + margin
+                                let maxX: CGFloat = geo.size.width / 2 - margin
+                                let minY: CGFloat = -geo.size.height + margin + 140
+                                let maxY: CGFloat = -margin
+                                
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                                    paletteOffset.width = min(max(paletteOffset.width, minX), maxX)
+                                    paletteOffset.height = min(max(paletteOffset.height, minY), maxY)
                                 }
                             }
                     )
-                    .overlay(
-                        Capsule()
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color.white.opacity(isDraggingDock ? 0.22 : 0.12), Color.white.opacity(0.02)],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                            .padding(1.5)
-                            .blendMode(.screen)
-                    )
-                    .animation(.interactiveSpring(response: 0.3, dampingFraction: 0.8), value: isDraggingDock)
-                }
-                
-                // 5. The Pro Inspector Panel
-                if showInspector {
-                    InspectorView(style: $viewModel.currentStyle)
-                        .transition(.asymmetric(
-                            insertion: .move(edge: .trailing).combined(with: .opacity).combined(with: .scale(scale: 0.95)),
-                            removal: .move(edge: .trailing).combined(with: .opacity).combined(with: .scale(scale: 0.95))
-                        ))
-                        .zIndex(2)
-                        // Dynamic positioning based on screen size
-                        .position(x: geo.size.width - 170.0, y: geo.size.height - 280.0)
+            }
+            .sheet(isPresented: $showPreview) {
+                GeometryReader { geo in
+                    TikZPreviewView(tikzCode: TikZExporter.generateCode(from: viewModel.shapes, canvasSize: geo.size))
                 }
             }
-            .sheet(isPresented: $showPreview) { TikZPreviewView(tikzCode: TikZExporter.generateCode(from: viewModel.shapes, canvasSize: geo.size)) }
+            .sheet(item: $shareWrapper) { item in
+                ActivityView(activityItems: [item.url], applicationActivities: nil)
+            }
             .preferredColorScheme(.dark)
+            .onChange(of: selectedPhoto) { newItem in
+                Task {
+                    if let data = try? await newItem?.loadTransferable(type: Data.self),
+                       let image = UIImage(data: data) {
+                        DispatchQueue.main.async {
+                            viewModel.tracingImage = image
+                            Haptic.shared.success()
+                        }
+                    }
+                }
+            }
         }
     }
     
-    // Uses filled icons for active states, outlined for inactive
+    // MARK: - UI Components
+    
+    var TopActionBar: some View {
+        HStack {
+            Button(action: { viewModel.clear() }) {
+                Image(systemName: "trash")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 44, height: 44)
+                    .background(Color.red.opacity(0.8))
+                    .clipShape(Circle())
+                    .shadow(color: .red.opacity(0.3), radius: 8, y: 4)
+            }
+            
+            Button(action: { viewModel.undo() }) {
+                Image(systemName: "arrow.uturn.backward")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(viewModel.canUndo ? .white : .white.opacity(0.35))
+                    .frame(width: 44, height: 44)
+                    .glassEffect(in: Circle())
+            }
+            .disabled(!viewModel.canUndo)
+            
+            Spacer()
+            
+            PhotosPicker(selection: $selectedPhoto, matching: .images, photoLibrary: .shared()) {
+                Image(systemName: "photo.badge.plus")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .frame(width: 44, height: 44)
+                    .glassEffect(in: Circle())
+            }
+            
+            Button(action: {
+                if let url = PDFExporter.exportViewModel(viewModel) {
+                    self.shareWrapper = ShareWrapper(url: url)
+                }
+            }) {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .frame(width: 44, height: 44)
+                    .glassEffect(in: Circle())
+            }
+            
+            Button(action: { showPreview = true; Haptic.shared.light() }) {
+                Image(systemName: "eye")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .frame(width: 44, height: 44)
+                    .glassEffect(in: Circle())
+            }
+            
+            GeometryReader { geo in
+                Button(action: {
+                    UIPasteboard.general.string = TikZExporter.generateCode(from: viewModel.shapes, canvasSize: geo.size)
+                    Haptic.shared.success()
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) { showToast = true }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                        withAnimation(.easeOut(duration: 0.3)) { showToast = false }
+                    }
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "doc.on.clipboard.fill")
+                        Text("TikZ")
+                    }
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .padding(.horizontal, 16)
+                    .frame(height: 44)
+                    .foregroundColor(.white)
+                    .background(Color.blue)
+                    .clipShape(Capsule())
+                    .shadow(color: .blue.opacity(0.4), radius: 8, y: 4)
+                }
+            }.frame(width: 90, height: 44)
+        }
+        .padding(.vertical, 12)
+    }
+    
+    // Draggable Minimal Floating Palette
+    var FloatingPalette: some View {
+        VStack(spacing: 0) {
+            
+            // Dedicated drag grip area that is physically larger to grab easily
+            ZStack {
+                Color.clear.frame(height: 24)
+                Capsule()
+                    .fill(Color.secondary.opacity(0.5))
+                    .frame(width: 42, height: 5)
+            }
+            .contentShape(Rectangle()) // Catches the drags effortlessly
+            .padding(.top, 4)
+            .padding(.bottom, 4)
+            
+            HStack(spacing: 6) {
+                let tools: [DrawingTool] = [.scribble, .eraser, .lasso, .move, .point, .line, .rectangle, .ellipse, .curve, .label]
+                
+                ForEach(tools, id: \.self) { t in
+                    let isActive = viewModel.currentTool == t
+                    Button(action: {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            viewModel.currentTool = t
+                            if t == .scribble { viewModel.currentStyle.lineStyle = .solid }
+                        }
+                        Haptic.shared.light()
+                    }) {
+                        Image(systemName: icon(t, isActive: isActive))
+                            .font(.system(size: 19, weight: isActive ? .bold : .medium))
+                            .foregroundColor(isActive ? (t == .eraser ? .white : .black) : .primary.opacity(0.8))
+                            .frame(width: 42, height: 42)
+                            .background(
+                                isActive ? (t == .eraser ? Color.red : Color(UIColor.systemGray4)) : Color.clear
+                            )
+                            .clipShape(Circle())
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            
+            Divider()
+                .background(Color.secondary.opacity(0.3))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            
+            // Integrated Mini Inspector
+            HStack(spacing: 12) {
+                // Color Swatches
+                ForEach([ShapeColor.graphite, ShapeColor.rose, ShapeColor.ocean, ShapeColor.amber], id: \.self) { c in
+                    Circle()
+                        .fill(c.swiftUIColor)
+                        .frame(width: 26, height: 26)
+                        .overlay(
+                            Circle().stroke(Color.primary, lineWidth: viewModel.currentStyle.color == c ? 2.0 : 0.0)
+                        )
+                        .scaleEffect(viewModel.currentStyle.color == c ? 1.15 : 1.0)
+                        .onTapGesture {
+                            withAnimation(.spring()) { viewModel.currentStyle.color = c }
+                            Haptic.shared.light()
+                        }
+                }
+                
+                Spacer()
+                
+                // Expand Full Inspector
+                Button(action: {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { showInspector.toggle() }
+                    Haptic.shared.light()
+                }) {
+                    Image(systemName: showInspector ? "slider.horizontal.3" : "slider.horizontal.2.square.on.square")
+                        .font(.system(size: 18, weight: showInspector ? .heavy : .medium))
+                        .foregroundColor(showInspector ? .black : .primary.opacity(0.9))
+                        .frame(width: 38, height: 38)
+                        .background(showInspector ? Color.white : Color(UIColor.secondarySystemBackground).opacity(0.5))
+                        .clipShape(Circle())
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
+            
+            // Pop-out Full Inspector
+            if showInspector {
+                InspectorView(viewModel: viewModel, style: $viewModel.currentStyle)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .padding(.bottom, 12)
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Color(UIColor.systemBackground).opacity(0.1))
+                .background(Material.ultraThin)
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        )
+        // Drag works over the whole background, not just the handle! 
+        .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        // Fixed max width for a beautiful floating card, tools compactly fit
+        .frame(width: 480)
+        .shadow(color: Color.black.opacity(0.4), radius: 30, y: 15)
+        .shadow(color: Color.black.opacity(0.2), radius: 8, y: 4)
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Color.white.opacity(0.15), lineWidth: 1))
+    }
+    
     func icon(_ t: DrawingTool, isActive: Bool) -> String {
         switch t {
         case .move: return isActive ? "hand.point.up.left.fill" : "hand.point.up.left"
-        case .curve: return "scribble.variable"
-        case .scribble: return isActive ? "signature" : "signature"
+        case .lasso: return "lasso"
+        case .curve: return "point.3.connected.trianglepath.dotted"
+        case .scribble: return isActive ? "pencil.tip.crop.circle.badge.plus" : "pencil.tip.crop.circle"
         case .rectangle: return isActive ? "rectangle.fill" : "rectangle"
         case .ellipse: return isActive ? "circle.fill" : "circle"
         case .line: return "line.diagonal"
@@ -241,124 +336,111 @@ struct MainView: View {
         case .eraser: return isActive ? "eraser.fill" : "eraser"
         }
     }
-    
-    private func clampedDockOffset(_ offset: CGSize, in size: CGSize) -> CGSize {
-        let dockWidthEstimate = CGFloat(toolbarTools.count) * 52.0 + 90.0
-        let maxHorizontal = max(0.0, (size.width - dockWidthEstimate) / 2.0)
-        let minVertical = -(size.height * 0.55)
-        let maxVertical = 0.0
-        let x = min(max(offset.width, -maxHorizontal), maxHorizontal)
-        let y = min(max(offset.height, minVertical), maxVertical)
-        return CGSize(width: x, height: y)
-    }
 }
 
-// MARK: - Premium Inspector View
+// MARK: - Premium Inspector View (Embedded Variant)
 struct InspectorView: View {
+    @ObservedObject var viewModel: CanvasViewModel
     @Binding var style: ShapeStyle
     
+    // Grid layouts for seamless custom buttons that ignore drag interceptions
+    let optionGrid = [GridItem(.adaptive(minimum: 75), spacing: 8)]
+    
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 18) {
             
-            // Header
-            HStack {
-                Image(systemName: "paintbrush.pointed.fill")
-                    .foregroundColor(.blue)
-                Text("Style & Format")
-                    .font(.system(.headline, design: .rounded))
-            }
-            .padding(.bottom, -4)
+            Divider().background(Color.secondary.opacity(0.3))
             
-            // Color Swatches
-            HStack(spacing: 12) {
-                ForEach(ShapeColor.allCases, id: \.self) { c in
-                    Circle()
-                        .fill(c.swiftUIColor)
-                        .frame(width: 32, height: 32)
-                        .overlay(
-                            Circle()
-                                .stroke(Color(UIColor.systemBackground), lineWidth: style.color == c ? 3.0 : 0.0)
-                                .padding(-4)
-                        )
-                        .overlay(
-                            Circle()
-                                .stroke(Color.primary.opacity(0.1), lineWidth: 1)
-                        )
-                        .shadow(color: c.swiftUIColor.opacity(style.color == c ? 0.4 : 0.0), radius: 6, y: 3)
-                        .scaleEffect(style.color == c ? 1.1 : 1.0)
-                        .onTapGesture {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { style.color = c }
-                            Haptic.shared.light()
-                        }
+            // Canvas Options
+            HStack(alignment: .top) {
+                Text("Canvas")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.secondary)
+                    .frame(width: 65, alignment: .leading)
+                    .padding(.top, 6)
+                
+                LazyVGrid(columns: optionGrid, alignment: .leading, spacing: 10) {
+                    ForEach(GridStyle.allCases, id: \.self) { g in
+                        Text(g.rawValue.capitalized)
+                            .font(.system(size: 12, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                            .background(viewModel.gridStyle == g ? Color.primary : Color(UIColor.tertiarySystemFill))
+                            .foregroundColor(viewModel.gridStyle == g ? Color(UIColor.systemBackground) : .primary)
+                            .clipShape(Capsule())
+                            .onTapGesture {
+                                withAnimation(.spring()) { viewModel.gridStyle = g }
+                                Haptic.shared.light()
+                            }
+                    }
                 }
             }
             
-            Divider()
-            
-            // Stroke Section
-            VStack(alignment: .leading, spacing: 12) {
-                Text("STROKE").font(.system(size: 11, weight: .bold)).foregroundColor(.secondary)
+            // Stroke Options
+            HStack(alignment: .top) {
+                Text("Stroke")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.secondary)
+                    .frame(width: 65, alignment: .leading)
+                    .padding(.top, 6)
                 
-                Picker("LineStyle", selection: $style.lineStyle) {
+                LazyVGrid(columns: optionGrid, alignment: .leading, spacing: 10) {
                     ForEach(LineStyle.allCases, id: \.self) { s in
-                        Text(s.rawValue.capitalized).tag(s)
-                    }
-                }
-                .pickerStyle(.segmented)
-                
-                Toggle(isOn: $style.hasArrow) {
-                    Label("Arrowhead", systemImage: "arrow.right")
-                        .font(.system(size: 14, weight: .medium))
-                }
-                .tint(.blue)
-            }
-            
-            Divider()
-            
-            // Fill Section
-            VStack(alignment: .leading, spacing: 12) {
-                Text("FILL").font(.system(size: 11, weight: .bold)).foregroundColor(.secondary)
-                
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(FillType.allCases, id: \.self) { f in
-                            Text(f.rawValue.capitalized)
-                                .font(.system(size: 13, weight: .semibold))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .background(style.fillType == f ? Color.blue : Color(UIColor.secondarySystemBackground))
-                                .foregroundColor(style.fillType == f ? .white : .primary)
-                                .cornerRadius(8)
-                                .shadow(color: style.fillType == f ? .blue.opacity(0.3) : .clear, radius: 4, y: 2)
-                                .onTapGesture {
-                                    withAnimation(.spring()) { style.fillType = f }
-                                    Haptic.shared.light()
-                                }
-                        }
+                        Text(s.rawValue.capitalized)
+                            .font(.system(size: 12, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                            .background(style.lineStyle == s ? Color.primary : Color(UIColor.tertiarySystemFill))
+                            .foregroundColor(style.lineStyle == s ? Color(UIColor.systemBackground) : .primary)
+                            .clipShape(Capsule())
+                            .onTapGesture {
+                                withAnimation(.spring()) { style.lineStyle = s }
+                                Haptic.shared.light()
+                            }
                     }
                 }
             }
+            
+            // Fill Options
+            HStack(alignment: .top) {
+                Text("Fill")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.secondary)
+                    .frame(width: 65, alignment: .leading)
+                    .padding(.top, 6)
+                
+                LazyVGrid(columns: optionGrid, alignment: .leading, spacing: 10) {
+                    ForEach(FillType.allCases, id: \.self) { f in
+                        Text(f.rawValue.capitalized)
+                            .font(.system(size: 12, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                            .background(style.fillType == f ? Color.primary : Color(UIColor.tertiarySystemFill))
+                            .foregroundColor(style.fillType == f ? Color(UIColor.systemBackground) : .primary)
+                            .clipShape(Capsule())
+                            .onTapGesture {
+                                withAnimation(.spring()) { style.fillType = f }
+                                Haptic.shared.light()
+                            }
+                    }
+                }
+            }
+            
+            Toggle(isOn: $style.hasArrow) {
+                Text("Arrowhead")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.secondary)
+            }
+            .tint(Color.primary)
+            
         }
-        .padding(20)
-        .frame(width: 290)
-        .liquidGlass(cornerRadius: 24)
-    }
-}
-
-extension View {
-    func liquidGlass(cornerRadius: CGFloat) -> some View {
-        self
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(LinearGradient(colors: [Color.white.opacity(0.72), Color.white.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.0)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(Color.white.opacity(0.22), lineWidth: 0.35)
-                    .blur(radius: 1.0)
-            )
-            .shadow(color: .white.opacity(0.24), radius: 3.0, y: -1.0)
-            .shadow(color: .black.opacity(0.18), radius: 18.0, y: 10.0)
+        .padding(.horizontal, 16)
+        .padding(.top, 4)
     }
 }
